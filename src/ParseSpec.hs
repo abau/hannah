@@ -3,19 +3,18 @@ module ParseSpec (parseSpecFile) where
 
 import qualified Data.ByteString as BS
 import           Data.String (fromString)
-import           Prelude hiding (sequence)
-import           System.FilePath (takeBaseName)
+import           Prelude hiding (sequence, length)
 import           Text.Parsec
 import           Text.Parsec.Expr
 import           Text.Parsec.Language (emptyDef, haskellStyle)
 import           Text.Parsec.String
 import qualified Text.Parsec.Token as P
 
-import           AST
+import           AST hiding (statements)
 
-parseSpecFile :: FilePath -> IO (Maybe Specification)
+parseSpecFile :: FilePath -> IO (Maybe [Statement])
 parseSpecFile filePath =
-  parseFromFile (specification filePath) filePath >>= \case
+  parseFromFile statements filePath >>= \case
     Left err -> do
       print err
       return Nothing
@@ -23,52 +22,68 @@ parseSpecFile filePath =
     Right spec -> 
       return $ Just spec
 
-specification :: FilePath -> Parser Specification
-specification filePath =
-  let name = fromString $ takeBaseName filePath
-  in do
-    statements <- many1 statement
-    eof
-    return $ Specification filePath name statements
+statements :: Parser [Statement]
+statements = do
+  statements <- many1 statement
+  eof
+  return statements
 
 statement :: Parser Statement
 statement = expectValue
         <|> expectEnum
         <|> expectConst
         <|> expectData
+        <|> expectAscii
         <|> sequence
         <|> if_
         <|> byteOrder
+        <|> let_
+        <|> try_
 
 expectValue :: Parser Statement
 expectValue = do
   reserved "expect-value"
-  type_  <- type_
-  name   <- byteStringLiteral
-  format <- format
-  semicolon
-  return $ StmtExpectValue $ Named name (type_, format)
+  unpacked <|> packed
+  where
+    unpacked = do
+      name   <- byteStringLiteral
+      type_  <- type_
+      choice [ do format <- format
+                  semicolon
+                  return $ StmtExpectValue $ EVSingle name type_ format
+             
+             , do length <- length
+                  format <- format
+                  semicolon
+                  return $ StmtExpectValue $ EVSequence name type_ length format
+             ]
+    packed = do
+      assignment <- assignment
+      type_  <- type_
+      format <- format
+      semicolon
+      return $ StmtExpectValue $ EVPacked assignment type_ format
 
 expectEnum :: Parser Statement
 expectEnum = do
   reserved "expect-enum"
-  type_  <- type_
   name   <- byteStringLiteral
+  type_  <- type_
   format <- optionMaybe $ try format
   case format of
     Just (FormatEnum e) -> do
       semicolon
-      return $ StmtExpectEnum (map fst e) $ Named name (type_, FormatEnum e)
+      return $ StmtExpectEnum (map fst e) name type_ $ FormatEnum e
 
     Just format -> do
       e <- enum
       semicolon
-      return $ StmtExpectEnum e $ Named name (type_, format)
+      return $ StmtExpectEnum e name type_ format
 
     Nothing -> do
       e <- enum
       semicolon
-      return $ StmtExpectEnum e $ Named name (type_, FormatDefault)
+      return $ StmtExpectEnum e name type_ FormatDefault
   where
     enum = brackets (commaSep1 natural)
 
@@ -78,23 +93,30 @@ expectConst = do
   type_ <- type_
   value <- natural
   semicolon
-  return $ StmtExpectConstant $ Constant type_ value
+  return $ StmtExpectConstant type_ value
 
 expectData :: Parser Statement
 expectData = do
   reserved "expect-data"
   name <- byteStringLiteral
-  reserved "of-length"
-  length <- (natural >>= return . LengthConstant) <|> (byteStringLiteral >>= return . LengthVariable)
+  length <- length
   semicolon
-  return $ StmtExpectData $ Named name length
+  return $ StmtExpectData name length
+
+expectAscii :: Parser Statement
+expectAscii = do
+  reserved "expect-ascii"
+  name <- byteStringLiteral
+  length <- length
+  semicolon
+  return $ StmtExpectAscii name length
 
 sequence :: Parser Statement
 sequence = do
   reserved "sequence"
   name       <- byteStringLiteral
   statements <- braces $ many1 statement
-  return $ StmtSequence $ Named name statements
+  return $ StmtSequence name statements
 
 if_ :: Parser Statement
 if_ = do
@@ -107,9 +129,35 @@ if_ = do
   return $ StmtIf condition true false
 
 byteOrder :: Parser Statement
-byteOrder = swap >>= return . StmtByteOrder
+byteOrder = do
+  byteorder <- swap <|> little <|> big
+  semicolon
+  return $ StmtByteOrder byteorder
   where
-    swap = reserved "byte-order-swap" >> return ByteOrderSwap
+    swap   = reserved "byte-order-swap"          >> return ByteOrderSwap
+    little = reserved "byte-order-little-endian" >> return ByteOrderLittleEndian
+    big    = reserved "byte-order-big-endian"    >> return ByteOrderBigEndian
+
+let_ :: Parser Statement
+let_ = do
+  reserved "let"
+  name <- byteStringLiteral
+  reservedOp "="
+  expr <- expression
+  semicolon
+  return $ StmtLet name expr
+
+try_ :: Parser Statement
+try_ = do
+  reserved "try"
+  names <- brackets (commaSep1 byteStringLiteral)
+  semicolon
+  return $ StmtTry names
+
+length :: Parser Length
+length = do
+  reserved "of-length"
+  (natural >>= return . LengthConstant) <|> (byteStringLiteral >>= return . LengthVariable)
 
 expression :: Parser Expression
 expression = buildExpressionParser exprTable term <?> "expression"
@@ -119,17 +167,18 @@ expression = buildExpressionParser exprTable term <?> "expression"
     constant = integer >>= return . ExprConstant
 
 format :: Parser Format
-format = (reserved "hex" >> return FormatHex)
-     <|> formatEnum
+format = (reserved "hex"  >> return FormatHex)
+     <|> (assignment >>= return . FormatEnum)
      <|> return FormatDefault
+
+assignment :: Parser Assignment
+assignment = brackets $ commaSep1 assign
   where
-    formatEnum = brackets (commaSep1 assignment) >>= return . FormatEnum
-      where
-        assignment = do
-          i <- natural
-          reservedOp "->"
-          s <- byteStringLiteral
-          return (i, s)
+    assign = do
+      i <- natural
+      reservedOp "->"
+      s <- byteStringLiteral
+      return (i, s)
 
 type_ :: Parser Type
 type_ = (reserved "uint8"  >> return TypeUInt8)
@@ -143,19 +192,24 @@ language = emptyDef {
     P.commentLine = "#"
   , P.opStart = P.opStart haskellStyle
   , P.opLetter = P.opLetter haskellStyle
-  , P.reservedNames = [ "expect-value", "expect-const", "expect-enum", "expect-data"
-                      , "sequence", "of-length", "if", "else"
-                      , "byte-order-swap"
+  , P.reservedNames = [ "expect-value", "expect-const", "expect-enum", "expect-data", "expect-ascii"
+                      , "sequence", "of-length", "if", "else", "let", "try"
+                      , "byte-order-swap", "byte-order-little-endian", "byte-order-big-endian"
                       , "uint8", "uint16", "uint32", "int8", "int16", "int32"
                       , "hex"
                       ]
-  , P.reservedOpNames = [ "->", "&&", "||", "==", "!=", "+", "-", "*", "/" ]
+  , P.reservedOpNames = [ "->", "&&", "||", "==", "!=", "+", "-", "*", "/", "="
+                        , ">", ">=", "<", "<="
+                        ]
 }
 
 exprTable = [ [prefix "-"  UnaryPlus, prefix "+" UnaryMinus ]
-            , [binary "*"  BinTimes AssocLeft, binary "/"  BinDiv      AssocLeft]
-            , [binary "+"  BinPlus  AssocLeft, binary "-"  BinMinus    AssocLeft]
-            , [binary "==" BinEqual AssocLeft, binary "!=" BinNotEqual AssocLeft]
+            , [binary "*"  BinTimes AssocLeft, binary "/"  BinDiv   AssocLeft]
+            , [binary "+"  BinPlus  AssocLeft, binary "-"  BinMinus AssocLeft]
+            , [ binary "<"  BinLess    AssocLeft, binary "<=" BinLessEqual AssocLeft
+              , binary ">"  BinGreater AssocLeft, binary ">=" BinGreaterEqual AssocLeft
+              ]
+            , [binary "==" BinEqual AssocLeft, binary "!=" BinNotEqual  AssocLeft]
             , [binary "&&" BinAnd   AssocLeft]
             , [binary "||" BinOr    AssocLeft]
             ]
