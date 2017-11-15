@@ -13,7 +13,7 @@ data Specification = Specification { filePath   :: FilePath
 
 data Statement = StmtExpectConstant Type Value
                | StmtExpectValue    ExpectValue
-               | StmtExpectEnum     [Int] BS.ByteString Type Format
+               | StmtExpectEnum     [Int] BS.ByteString Type Format (Maybe Assignment)
                | StmtExpectData     BS.ByteString Length
                | StmtExpectAscii    BS.ByteString Length
                | StmtSequence       BS.ByteString [Statement]
@@ -22,8 +22,8 @@ data Statement = StmtExpectConstant Type Value
                | StmtLet            BS.ByteString Expression
                | StmtTry            [BS.ByteString]
 
-data ExpectValue = EVSingle   BS.ByteString Type Format
-                 | EVSequence BS.ByteString Type Length Format
+data ExpectValue = EVSingle   BS.ByteString Type Format (Maybe Assignment)
+                 | EVSequence BS.ByteString Type Length Format (Maybe Assignment)
                  | EVPacked   Assignment Type Format
 
 data Expression = ExprConstant Int
@@ -40,10 +40,8 @@ data UnaryOp = UnaryPlus | UnaryMinus
 data Length = LengthConstant Int
             | LengthVariable BS.ByteString
 
-data Format = FormatDefault
+data Format = FormatDec
             | FormatHex
-            | FormatEnum Assignment
-            deriving Eq
 
 type Assignment = [(Value, BS.ByteString)]
 

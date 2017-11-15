@@ -1,14 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
 module Read (trySpecificationsOnFile) where
 
-import           Control.Monad (when, guard, unless, forM, forM_, ap)
+import           Control.Monad (when, guard, unless, forM, forM_)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Maybe (MaybeT (MaybeT), runMaybeT)
 import           Control.Monad.Trans.State.Strict (StateT (StateT), runStateT, gets, modify')
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.Binary.Get as B
 import           Data.Bits ((.&.), shiftR)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LazyBS
 import qualified Data.Char as Char
 import qualified Data.Map.Strict as Map
 import           Data.String (fromString)
@@ -19,9 +19,10 @@ import qualified System.IO as IO
 import           Text.Printf (printf)
 
 import AST
+import Util
 
-trySpecificationsOnFile :: Specifications -> FilePath -> IO Bool
-trySpecificationsOnFile specs filePath =
+trySpecificationsOnFile :: Specifications -> FilePath -> Bool -> IO (Maybe Values)
+trySpecificationsOnFile specs filePath printOutput =
   let toplevelSpecs = filter toplevel $ Map.elems specs
   in
     IO.withBinaryFile filePath IO.ReadMode $ \handle -> do
@@ -29,15 +30,16 @@ trySpecificationsOnFile specs filePath =
                           $ defaultEnv specs handle
       case result of
         Just (_, env) -> do
-          BS.putStr $ output env
-          return True
-        Nothing -> return False
+          when printOutput $ BS.putStr $ output env
+          return $ Just $ values env
+        Nothing -> return Nothing
 
 trySpecifications :: [Specification] -> Read ()
-trySpecifications = \case
-  []   -> failRead
-  [s]  -> readSpecification s
-  s:ss -> (readSpecification s) `catch` (trySpecifications ss)
+trySpecifications = go 0
+  where
+    go i = \case
+      []   -> failRead
+      s:ss -> (withPrefix i $ readSpecification s) `catch` (go (i+1) ss)
 
 readSpecification :: Specification -> Read ()
 readSpecification specification = do
@@ -50,34 +52,34 @@ readStatements = mapM_ readStatement
 
 readStatement :: Statement -> Read ()
 readStatement = \case
-  StmtExpectConstant t v -> readConstant t v
-  StmtExpectValue v      -> readValue v
-  StmtExpectEnum e n t f -> readEnum e n t f
-  StmtExpectData n l     -> readData n l
-  StmtExpectAscii n l    -> readAscii n l
-  StmtSequence n s       -> readSequence n s
-  StmtIf c t f           -> readIf c t f
-  StmtByteOrder b        -> readByteOrder b
-  StmtLet n e            -> readLet n e
-  StmtTry s              -> readTry s
+  StmtExpectConstant t v   -> readConstant t v
+  StmtExpectValue v        -> readValue v
+  StmtExpectEnum e n t f a -> readEnum e n t f a
+  StmtExpectData n l       -> readData n l
+  StmtExpectAscii n l      -> readAscii n l
+  StmtSequence n s         -> readSequence n s
+  StmtIf c t f             -> readIf c t f
+  StmtByteOrder b          -> readByteOrder b
+  StmtLet n e              -> readLet n e
+  StmtTry s                -> readTry s
 
 readConstant :: Type -> Value -> Read ()
 readConstant t v = readValueOfType t >>= guard . ((==) v)
 
 readValue :: ExpectValue -> Read ()
 readValue = \case
-  EVSingle name type_ format -> do
+  EVSingle name type_ format assignment -> do
     value <- readValueOfType type_
-    printValues name type_ format [value]
+    printValues name type_ format assignment [value]
     addValue name value
 
-  EVSequence name type_ length format -> do
+  EVSequence name type_ length format assignment -> do
     length <- readLength length
-    values <- forM [1..length] $ \i -> do
+    values <- forM [0..length - 1] $ \i -> do
       value <- readValueOfType type_
-      addValue (BS.concat [name, fromString "[", fromString $ show i, fromString "]"]) value
+      withPrefix i $ addValue name value
       return value
-    printValues name type_ format values
+    printValues name type_ format assignment values
 
   EVPacked assignment type_ format -> do
     value <- readValueOfType type_
@@ -90,18 +92,25 @@ readValue = \case
               value'    = value `shiftR` numBits
           in do
             go value' assignment
-            printValues name (requiredType numBits) format [effective]
+            printValues name (requiredType numBits) format Nothing [effective]
             addValue name effective
 
-readEnum :: [Int] -> BS.ByteString -> Type -> Format -> Read ()
-readEnum enum name type_ format = do
+readEnum :: [Int] -> BS.ByteString -> Type -> Format -> Maybe Assignment -> Read ()
+readEnum enum name type_ format assignment = do
   value <- readValueOfType type_
   guard $ value `elem` enum
-  printValues name type_ format [value]
+  printValues name type_ format assignment [value]
   addValue name value
 
 readData :: BS.ByteString -> Length -> Read ()
-readData name length = readLength length >>= readChunk >>= printData
+readData name length = do
+  length <- readLength length
+  chunk  <- readChunk  length
+  forM_ [0..length - 1] $ \i ->
+    let value = fromIntegral $ BS.index chunk i
+    in
+      withPrefix i $ addValue name value
+  printData chunk
   where
     printData data_ = 
       let hexLines  = makeHexLines data_
@@ -118,9 +127,7 @@ readData name length = readLength length >>= readChunk >>= printData
     makeCharLines = makeLines $ toLength 8 . map8
       where
         map8        = BS.map $ \c -> if printable c then c else c2w '.'
-        printable c = Char.isAscii c' && Char.isPrint c'
-          where
-            c' = toEnum $ fromEnum c
+        printable w = Char.isAscii (w2c w) && Char.isPrint (w2c w)
 
     toLength n string = BS.append string $ space $ n - BS.length string
 
@@ -138,9 +145,14 @@ readData name length = readLength length >>= readChunk >>= printData
 
 readAscii :: BS.ByteString -> Length -> Read ()
 readAscii name length = do
-  data_ <- readLength length >>= readChunk
-  unless (isAscii data_) failRead
-  printData data_
+  length <- readLength length
+  chunk  <- readChunk  length
+  unless (isAscii chunk) failRead
+  forM_ [0..length - 1] $ \i ->
+    let value = fromIntegral $ BS.index chunk i
+    in
+      withPrefix i $ addValue name value
+  printData chunk
   where
     isAscii     = all (Char.isAscii . w2c) . BS.unpack
     printData   = printBlock name . map (BS.filter isPrintable) . BS.splitWith isNewline
@@ -148,21 +160,21 @@ readAscii name length = do
     isPrintable = Char.isPrint . w2c
 
 readSequence :: BS.ByteString -> [Statement] -> Read ()
-readSequence name statements = go
+readSequence name statements = go 0
   where
-    go = do
+    go i = do
       printBlock name []
-      withIncreasedIndent $ readStatements statements
+      withPrefix i $ withIncreasedIndent $ readStatements statements
       isEOF <- fromEnv handle >>= runIO . IO.hIsEOF
-      unless isEOF go
+      unless isEOF $ go $ i + 1
 
 readIf :: Expression -> [Statement] -> Maybe [Statement] -> Read ()
 readIf condition true mFalse = do
   c <- readExpression condition
-  if c > 0 then readStatements true
+  if c > 0 then withPrefix 0 $ readStatements true
            else case mFalse of
                   Nothing    -> return ()
-                  Just false -> readStatements false
+                  Just false -> withPrefix 1 $ readStatements false
 
 readByteOrder :: ByteOrder -> Read ()
 readByteOrder = \case
@@ -176,7 +188,6 @@ readByteOrder = \case
 readLet :: BS.ByteString -> Expression -> Read ()
 readLet name expr = do
   value <- readExpression expr
-  --printValues (BS.append (fromString "DEBUG ") name) TypeInt32 FormatDefault [value]
   addValue name value
 
 readTry :: [BS.ByteString] -> Read ()
@@ -193,32 +204,12 @@ readLength = \case
  LengthVariable v -> valueFromEnv v
 
 readExpression :: Expression -> Read Int
-readExpression = \case
-  ExprConstant i      -> return i
-  ExprVariable v      -> valueFromEnv v
-  ExprUnary op e1     -> return (unary  op) `ap` (readExpression e1)
-  ExprBinary op e1 e2 -> return (binary op) `ap` (readExpression e1) `ap` (readExpression e2)
-  where
-    unary UnaryPlus  v = v
-    unary UnaryMinus v = -v
-
-    binary BinAnd          v1 v2 = b2i $ (i2b v1) && (i2b v2)
-    binary BinOr           v1 v2 = b2i $ (i2b v1) || (i2b v2)
-    binary BinEqual        v1 v2 = b2i $ v1 == v2
-    binary BinNotEqual     v1 v2 = b2i $ v1 /= v2
-    binary BinPlus         v1 v2 = v1 + v2
-    binary BinMinus        v1 v2 = v1 - v2
-    binary BinTimes        v1 v2 = v1 * v2
-    binary BinDiv          v1 v2 = v1 `div` v2
-    binary BinLess         v1 v2 = b2i $ v1 < v2
-    binary BinLessEqual    v1 v2 = b2i $ v1 <= v2
-    binary BinGreater      v1 v2 = b2i $ v1 > v2
-    binary BinGreaterEqual v1 v2 = b2i $ v1 >= v2
-
-    i2b 0     = False
-    i2b _     = True
-    b2i False = 0
-    b2i True  = 1
+readExpression e = do
+  prefix <- fromEnv prefix
+  value  <- fromEnv values >>= return . evaluate e prefix
+  case value of
+    Nothing -> failSpec "Could not evaluate expression"
+    Just v  -> return v
 
 readValueOfType :: Type -> Read Value
 readValueOfType = \case
@@ -245,25 +236,15 @@ readChunk n = do
   return chunk
 
 addValue :: BS.ByteString -> Value -> Read ()
-addValue name value = mapEnv $ \env -> env { values = Map.insert name value $ values env }
+addValue name value = do
+  prefix <- fromEnv prefix
+  mapEnv $ \env -> env { values = Map.insert (name, prefix) value $ values env }
 
-printValues :: BS.ByteString -> Type -> Format -> [Value] -> Read ()
-printValues label type_ format values = do
+printValues :: BS.ByteString -> Type -> Format -> Maybe Assignment -> [Value] -> Read ()
+printValues label type_ format assignment values = do
   indent <- fromEnv indent
   toOutput [space indent, label, fromString ": "]
-  let values' = flip map values $ \value ->
-        case format of
-          FormatDefault -> fromString $ printf "%d" value
-          FormatHex -> case type_ of
-            TypeUInt8  -> fromString $ printf "0x%02x" value
-            TypeInt8   -> fromString $ printf "0x%02x" value
-            TypeUInt16 -> fromString $ printf "0x%04x" value
-            TypeInt16  -> fromString $ printf "0x%04x" value
-            TypeUInt32 -> fromString $ printf "0x%08x" value
-            TypeInt32  -> fromString $ printf "0x%08x" value
-          FormatEnum e -> case lookup value e of
-            Nothing -> fromString $ printf "%d" value
-            Just s -> s
+  let values' = map (\v -> formatValue v type_ format assignment) values
   toOutput [BS.intercalate (space 1) values', newline]
 
 printBlock :: BS.ByteString -> [BS.ByteString] -> Read ()
@@ -300,12 +281,20 @@ withIncreasedIndent read = do
   mapEnv $ \env -> env { indent = indent }
   return result
 
+withPrefix :: Int -> Read a -> Read a
+withPrefix p run = do
+  mapEnv $ \env -> env { prefix = p : (prefix env) }
+  result <- run
+  mapEnv $ \env -> env { prefix = tail $ prefix env }
+  return result
+
 mapEnv :: (Env -> Env) -> Read ()
 mapEnv = modify'
 
 valueFromEnv :: BS.ByteString -> Read Value
-valueFromEnv name =
-  fromEnv values >>= return . Map.lookup name >>= \case
+valueFromEnv name = do
+  prefix <- fromEnv prefix
+  fromEnv values >>= return . getValue name prefix >>= \case
     Just value -> return value
     Nothing    -> failSpec $ "Could not find variable " ++ (show name)
 
@@ -324,34 +313,16 @@ fromEnv :: (Env -> a) -> Read a
 fromEnv = gets
 
 defaultEnv :: Specifications -> IO.Handle -> Env
-defaultEnv specs handle = Env specs handle 0 Map.empty BS.empty "" E.getSystemEndianness
+defaultEnv specs handle = Env specs handle 0 Map.empty BS.empty "" E.getSystemEndianness []
 
 type Read a = StateT Env (MaybeT IO) a
 
 data Env = Env { specs        :: Specifications
                , handle       :: IO.Handle
                , indent       :: Int
-               , values       :: Map.Map BS.ByteString Value
+               , values       :: Values
                , output       :: BS.ByteString
                , specFilePath :: FilePath
                , byteOrder    :: E.Endianness
+               , prefix       :: [Int]
                }
-
-requiredType :: Int -> Type
-requiredType = \case
-  i | i <= 8  -> TypeUInt8
-  i | i <= 16 -> TypeUInt16
-  i | i <= 32 -> TypeUInt32
-  i           -> error $ "requiredType undefined on " ++ (show i)
-
-newline :: BS.ByteString
-newline = BS.singleton $ c2w '\n'
-
-space :: Int -> BS.ByteString
-space i = BS.replicate i $ c2w ' '
-
-c2w :: Char -> Word8
-c2w = toEnum . fromEnum
-
-w2c :: Word8 -> Char
-w2c = toEnum . fromEnum

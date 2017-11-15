@@ -23,8 +23,9 @@ library
   hs-source-dirs:      src
   exposed-modules:     AST
                      , ParseSpec
-                     , ParseOption
                      , Read
+                     , Util
+                     , Write
   build-depends:       base >= 4.7 && < 5
                      , binary
                      , bytestring
@@ -37,6 +38,7 @@ library
 executable hannah-exe
   hs-source-dirs:      app
   main-is:             Main.hs
+  other-modules:       ParseOption
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , containers

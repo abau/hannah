@@ -49,13 +49,15 @@ expectValue = do
       name   <- byteStringLiteral
       type_  <- type_
       choice [ do format <- format
+                  assign <- optionMaybe assignment
                   semicolon
-                  return $ StmtExpectValue $ EVSingle name type_ format
+                  return $ StmtExpectValue $ EVSingle name type_ format assign
              
              , do length <- length
                   format <- format
+                  assign <- optionMaybe assignment
                   semicolon
-                  return $ StmtExpectValue $ EVSequence name type_ length format
+                  return $ StmtExpectValue $ EVSequence name type_ length format assign
              ]
     packed = do
       assignment <- assignment
@@ -69,23 +71,17 @@ expectEnum = do
   reserved "expect-enum"
   name   <- byteStringLiteral
   type_  <- type_
-  format <- optionMaybe $ try format
-  case format of
-    Just (FormatEnum e) -> do
+  format <- format
+  assign <- optionMaybe $ try assignment
+  case assign of
+    Just a -> do
       semicolon
-      return $ StmtExpectEnum (map fst e) name type_ $ FormatEnum e
-
-    Just format -> do
-      e <- enum
-      semicolon
-      return $ StmtExpectEnum e name type_ format
+      return $ StmtExpectEnum (map fst a) name type_ format $ Just a
 
     Nothing -> do
-      e <- enum
+      e <- brackets (commaSep1 natural)
       semicolon
-      return $ StmtExpectEnum e name type_ FormatDefault
-  where
-    enum = brackets (commaSep1 natural)
+      return $ StmtExpectEnum e name type_ format Nothing
 
 expectConst :: Parser Statement
 expectConst = do
@@ -168,8 +164,7 @@ expression = buildExpressionParser exprTable term <?> "expression"
 
 format :: Parser Format
 format = (reserved "hex"  >> return FormatHex)
-     <|> (assignment >>= return . FormatEnum)
-     <|> return FormatDefault
+     <|> return FormatDec
 
 assignment :: Parser Assignment
 assignment = brackets $ commaSep1 assign

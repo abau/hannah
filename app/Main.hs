@@ -4,6 +4,7 @@ module Main where
 import           Control.Monad (forM)
 import qualified Data.Map.Strict as Map
 import           Data.String (fromString)
+import           Prelude hiding (writeFile)
 import           System.Exit (exitFailure)
 import           System.Directory (listDirectory, doesDirectoryExist)
 import           System.FilePath ((</>), takeBaseName)
@@ -13,16 +14,22 @@ import Paths_hannah (getDataDir)
 import ParseSpec (parseSpecFile)
 import ParseOption
 import Read (trySpecificationsOnFile)
+import Write (writeFile)
 
 main :: IO ()
 main = do
   option <- parseOption
   specs  <- parseSpecifications ""
-  case mode option of
-    Write -> undefined
-    Read  -> trySpecificationsOnFile specs (filePath option) >>= \case
-      True  -> return ()
-      False -> putStrLn ("Could not parse '" ++ filePath option ++ "'") >> exitFailure
+  case option of
+    OptionWrite file -> writeFile specs file Nothing
+
+    OptionRead  file -> trySpecificationsOnFile specs file True >>= \case
+      Just _  -> return ()
+      Nothing -> putStrLn ("Could not parse '" ++ file ++ "'") >> exitFailure
+
+    OptionModify inFile outFile -> trySpecificationsOnFile specs inFile False >>= \case
+      Nothing -> putStrLn ("Could not parse '" ++ inFile ++ "'") >> exitFailure
+      Just v  -> writeFile specs outFile $ Just v
 
 parseSpecifications :: FilePath -> IO Specifications
 parseSpecifications relativeFilePath = do
