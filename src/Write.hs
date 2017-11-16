@@ -33,7 +33,7 @@ writeSpecifications = \case
   specs  -> do
     let choice     = [0..length specs - 1]
         assignment = Just $ zip choice $ map name specs
-    i <- choose (fromString "specification") choice Nothing TypeUInt8 FormatDec assignment
+    i <- choose (fromString "specification") False choice Nothing TypeUInt8 FormatDec assignment
     withPrefix i $ writeSpecification $ specs !! i
 
 writeSpecification :: Specification -> Write ()
@@ -74,25 +74,23 @@ writeValue = \case
     writeValueOfType value type_
     where
       go value (numBits, name) = do
-        value' <- enter name (bounds $ Left numBits) type_ format
+        value' <- enter name False (bounds $ Left numBits) type_ format
         addValue name value'
         return $ (value `shiftL` numBits) .|. value'
 
 writeSingleValue :: Bool -> BS.ByteString -> Type -> Format -> Maybe Assignment -> Write ()
 writeSingleValue showPrefix name type_ format assignment = do
   prefix <- fromEnv prefix
-  let name' = if showPrefix then toPrefixName name [head prefix]
-                            else name
   value <- case assignment of
-             Just a -> choose name' (map fst a) (Just $ bounds $ Right type_) type_ 
+             Just a -> choose name showPrefix (map fst a) (Just $ bounds $ Right type_) type_ 
                               format assignment
-             _      -> enter name' (bounds $ Right type_) type_ format
+             _      -> enter name showPrefix (bounds $ Right type_) type_ format
   writeValueOfType value type_
   addValue name value
 
 writeEnum :: [Int] -> BS.ByteString -> Type -> Format -> Maybe Assignment -> Write ()
 writeEnum enum name type_ format assignment = do
-  value <- choose name enum Nothing type_ format assignment
+  value <- choose name False enum Nothing type_ format assignment
   writeValueOfType value type_
   addValue name value
     
@@ -134,7 +132,7 @@ writeSequence name length statements = mapM writeLength length >>= go 0
   where
     go i = \case
       Nothing -> do
-        oneMore <- withPrefix i $ choose label [0,1] Nothing TypeUInt8 FormatDec assignment
+        oneMore <- withPrefix i $ choose label True [0,1] Nothing TypeUInt8 FormatDec assignment
         when (oneMore == 1) $ do
           withPrefix i $ writeStatements statements
           go (i + 1) Nothing
@@ -191,12 +189,16 @@ writeExpression e = do
     Nothing -> failSpec "Could not evaluate expression"
     Just v  -> return v
 
-enter :: BS.ByteString -> (Value, Value) -> Type -> Format -> Write Value
-enter name bounds type_ format = go
+enter :: BS.ByteString -> Bool -> (Value, Value) -> Type -> Format -> Write Value
+enter name showPrefix bounds type_ format = go
   where
     go = do
+      promptName <- if showPrefix
+                    then fromEnv prefix >>= \(p:_) -> return $ toPrefixName name [p]
+                    else return name
+
       default_ <- optionalValueFromEnv name
-      print $ BS.concat [ fromString $ "Enter ", name, fromString " "
+      print $ BS.concat [ fromString $ "Enter ", promptName, fromString " "
                         , formatBounds  bounds   type_ format
                         , formatDefault default_ type_ format Nothing
                         , fromString ": "]
@@ -206,9 +208,9 @@ enter name bounds type_ format = go
           Just i | inBounds i bounds -> return i
           _                          -> go
 
-choose :: BS.ByteString -> [Value] -> Maybe (Value, Value) -> Type 
+choose :: BS.ByteString -> Bool -> [Value] -> Maybe (Value, Value) -> Type 
        -> Format -> Maybe Assignment -> Write Value
-choose name choice allowCustom type_ format assignment = do
+choose name showPrefix choice allowCustom type_ format assignment = do
   printLn BS.empty
   forM_ choice $ \c ->
     let key   = formatValue c type_ format Nothing
@@ -222,8 +224,12 @@ choose name choice allowCustom type_ format assignment = do
   go
   where
     go = do
+      promptName <- if showPrefix
+                    then fromEnv prefix >>= \(p:_) -> return $ toPrefixName name [p]
+                    else return name
+
+      print $ BS.append (fromString "Choose ") promptName
       default_ <- optionalValueFromEnv name
-      print $ BS.append (fromString "Choose ") name
       case allowCustom of
         Nothing     -> print $ BS.concat [ formatDefault default_ type_ format assignment
                                          , fromString ": " ]
