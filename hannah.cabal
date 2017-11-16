@@ -18,6 +18,7 @@ data-files:          specs/pcap.spec
                    , specs/pcap/ethernet/ipv4.spec
                    , specs/pcap/ethernet/ipv4/tcp.spec
                    , specs/pcap/ethernet/ipv4/tcp/ascii.spec
+                   , specs/bmp.spec
 
 library
   hs-source-dirs:      src
