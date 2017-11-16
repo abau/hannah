@@ -16,7 +16,7 @@ data Statement = StmtExpectConstant Type Value
                | StmtExpectEnum     [Int] BS.ByteString Type Format (Maybe Assignment)
                | StmtExpectData     BS.ByteString Length
                | StmtExpectAscii    BS.ByteString Length
-               | StmtSequence       BS.ByteString [Statement]
+               | StmtSequence       BS.ByteString (Maybe Length) [Statement]
                | StmtIf             Expression [Statement] (Maybe [Statement])
                | StmtByteOrder      ByteOrder
                | StmtLet            BS.ByteString Expression

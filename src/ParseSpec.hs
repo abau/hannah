@@ -111,8 +111,9 @@ sequence :: Parser Statement
 sequence = do
   reserved "sequence"
   name       <- byteStringLiteral
+  length     <- optionMaybe length
   statements <- braces $ many1 statement
-  return $ StmtSequence name statements
+  return $ StmtSequence name length statements
 
 if_ :: Parser Statement
 if_ = do

@@ -57,7 +57,7 @@ readStatement = \case
   StmtExpectEnum e n t f a -> readEnum e n t f a
   StmtExpectData n l       -> readData n l
   StmtExpectAscii n l      -> readAscii n l
-  StmtSequence n s         -> readSequence n s
+  StmtSequence n l s       -> readSequence n l s
   StmtIf c t f             -> readIf c t f
   StmtByteOrder b          -> readByteOrder b
   StmtLet n e              -> readLet n e
@@ -159,14 +159,23 @@ readAscii name length = do
     isNewline   = (==) '\n' . w2c
     isPrintable = Char.isPrint . w2c
 
-readSequence :: BS.ByteString -> [Statement] -> Read ()
-readSequence name statements = go 0
+readSequence :: BS.ByteString -> Maybe Length -> [Statement] -> Read ()
+readSequence name length statements = mapM readLength length >>= go 0
   where
-    go i = do
-      printBlock name []
-      withPrefix i $ withIncreasedIndent $ readStatements statements
-      isEOF <- fromEnv handle >>= runIO . IO.hIsEOF
-      unless isEOF $ go $ i + 1
+    go i = \case
+      Nothing -> do
+        isEOF <- fromEnv handle >>= runIO . IO.hIsEOF
+        unless isEOF $ do
+          printBlock name []
+          withPrefix i $ withIncreasedIndent $ readStatements statements
+          go (i + 1) Nothing
+    
+      Just length | i < length -> do
+        printBlock name []
+        withPrefix i $ withIncreasedIndent $ readStatements statements
+        go (i + 1) $ Just length
+
+      Just _ -> return ()
 
 readIf :: Expression -> [Statement] -> Maybe [Statement] -> Read ()
 readIf condition true mFalse = do

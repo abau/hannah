@@ -51,7 +51,7 @@ writeStatement = \case
   StmtExpectEnum e n t f a -> writeEnum e n t f a
   StmtExpectData n l       -> writeData n l
   StmtExpectAscii n l      -> writeAscii n l
-  StmtSequence n s         -> writeSequence n s
+  StmtSequence n l s       -> writeSequence n l s
   StmtIf c t f             -> writeIf c t f
   StmtByteOrder b          -> writeByteOrder b
   StmtLet n e              -> writeLet n e
@@ -129,14 +129,22 @@ writeAscii name length = do
       values <- forM [0..length - 1] $ \i -> withPrefix i $ optionalValueFromEnv name
       return $ fmap BS.pack $ sequence $ map (fmap fromIntegral) values
 
-writeSequence :: BS.ByteString -> [Statement] -> Write ()
-writeSequence name statements = go 0 
+writeSequence :: BS.ByteString -> Maybe Length -> [Statement] -> Write ()
+writeSequence name length statements = mapM writeLength length >>= go 0 
   where
-    go i = do
-      oneMore <- withPrefix i $ choose label [0,1] Nothing TypeUInt8 FormatDec assignment
-      when (oneMore == 1) $ do
+    go i = \case
+      Nothing -> do
+        oneMore <- withPrefix i $ choose label [0,1] Nothing TypeUInt8 FormatDec assignment
+        when (oneMore == 1) $ do
+          withPrefix i $ writeStatements statements
+          go (i + 1) Nothing
+
+      Just length | i < length -> do
         withPrefix i $ writeStatements statements
-        go $ i + 1
+        go (i + 1) $ Just length
+
+      Just _ -> return ()
+
     label      = BS.append (fromString "New ") name
     assignment = Just [ (0, fromString "No"), (1, fromString "Yes") ]
 
