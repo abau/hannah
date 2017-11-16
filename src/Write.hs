@@ -62,18 +62,12 @@ writeConstant t v = writeValueOfType v t
 
 writeValue :: ExpectValue -> Write ()
 writeValue = \case
-  EVSingle name type_ format assignment -> do
-    value <- case assignment of
-               Just a -> choose name (map fst a) (Just $ bounds $ Right type_) type_ 
-                                format assignment
-               _      -> enter name (bounds $ Right type_) type_ format
-    writeValueOfType value type_
-    addValue name value
+  EVSingle name type_ format assignment -> writeSingleValue False name type_ format assignment
 
   EVSequence name type_ length format assignment -> do
     length <- writeLength length
     forM_ [0..length - 1] $ \i -> 
-      withPrefix i $ writeValue $ EVSingle name type_ format assignment
+      withPrefix i $ writeSingleValue True name type_ format assignment
 
   EVPacked assignment type_ format -> do
     value <- foldM go 0 assignment
@@ -83,6 +77,18 @@ writeValue = \case
         value' <- enter name (bounds $ Left numBits) type_ format
         addValue name value'
         return $ (value `shiftL` numBits) .|. value'
+
+writeSingleValue :: Bool -> BS.ByteString -> Type -> Format -> Maybe Assignment -> Write ()
+writeSingleValue showPrefix name type_ format assignment = do
+  prefix <- fromEnv prefix
+  let name' = if showPrefix then toPrefixName name [head prefix]
+                            else name
+  value <- case assignment of
+             Just a -> choose name' (map fst a) (Just $ bounds $ Right type_) type_ 
+                              format assignment
+             _      -> enter name' (bounds $ Right type_) type_ format
+  writeValueOfType value type_
+  addValue name value
 
 writeEnum :: [Int] -> BS.ByteString -> Type -> Format -> Maybe Assignment -> Write ()
 writeEnum enum name type_ format assignment = do
@@ -94,7 +100,7 @@ writeData :: BS.ByteString -> Length -> Write ()
 writeData name length = do
   length <- writeLength length
   forM_ [0..length - 1] $ \i ->
-    withPrefix i $ writeValue $ EVSingle name TypeUInt8 FormatHex Nothing
+    withPrefix i $ writeSingleValue True name TypeUInt8 FormatHex Nothing
 
 writeAscii :: BS.ByteString -> Length -> Write ()
 writeAscii name length = do
