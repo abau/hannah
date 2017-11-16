@@ -23,11 +23,11 @@ main = do
   case option of
     OptionWrite file -> writeFile specs file Nothing
 
-    OptionRead  file -> trySpecificationsOnFile specs file True >>= \case
+    OptionRead file debug -> trySpecificationsOnFile specs file True debug >>= \case
       Just _  -> return ()
       Nothing -> putStrLn ("Could not parse '" ++ file ++ "'") >> exitFailure
 
-    OptionModify inFile outFile -> trySpecificationsOnFile specs inFile False >>= \case
+    OptionModify inFile outFile -> trySpecificationsOnFile specs inFile False False >>= \case
       Nothing -> putStrLn ("Could not parse '" ++ inFile ++ "'") >> exitFailure
       Just v  -> writeFile specs outFile $ Just v
 

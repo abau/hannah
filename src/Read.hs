@@ -21,13 +21,13 @@ import           Text.Printf (printf)
 import AST
 import Util
 
-trySpecificationsOnFile :: Specifications -> FilePath -> Bool -> IO (Maybe Values)
-trySpecificationsOnFile specs filePath printOutput =
+trySpecificationsOnFile :: Specifications -> FilePath -> Bool -> Bool -> IO (Maybe Values)
+trySpecificationsOnFile specs filePath printOutput debug =
   let toplevelSpecs = filter toplevel $ Map.elems specs
   in
     IO.withBinaryFile filePath IO.ReadMode $ \handle -> do
       result <- runMaybeT $ runStateT (trySpecifications toplevelSpecs) 
-                          $ defaultEnv specs handle
+                          $ defaultEnv specs handle debug
       case result of
         Just (_, env) -> do
           when printOutput $ BS.putStr $ output env
@@ -269,7 +269,9 @@ printBlock label lines = do
                  return [space indent', l, newline]
 
 toOutput :: [BS.ByteString] -> Read ()
-toOutput strings =
+toOutput strings = do
+  debug <- fromEnv debug
+  when debug $ forM_ strings $ runIO . BS.putStr
   mapEnv $ \env -> env { output = BS.concat $ (output env) : strings }
 
 catch :: Read a -> Read a -> Read a
@@ -321,7 +323,7 @@ runIO = lift . lift
 fromEnv :: (Env -> a) -> Read a
 fromEnv = gets
 
-defaultEnv :: Specifications -> IO.Handle -> Env
+defaultEnv :: Specifications -> IO.Handle -> Bool -> Env
 defaultEnv specs handle = Env specs handle 0 Map.empty BS.empty "" E.getSystemEndianness []
 
 type Read a = StateT Env (MaybeT IO) a
@@ -334,4 +336,5 @@ data Env = Env { specs        :: Specifications
                , specFilePath :: FilePath
                , byteOrder    :: E.Endianness
                , prefix       :: [Int]
+               , debug        :: Bool
                }
