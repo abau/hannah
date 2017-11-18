@@ -1,13 +1,13 @@
 name:                hannah
 version:             0.1.0.0
--- synopsis:
+synopsis:            a DSL for parsing and generating files and network traces
 -- description:
-homepage:            https://github.com/githubuser/hannah#readme
-license:             BSD3
-license-file:        LICENSE
-author:              Author name here
-maintainer:          example@example.com
-copyright:           2017 Author name here
+homepage:            https://github.com/abau/hannah#readme
+license:             GPL
+license-file:        LICENSE.txt
+author:              Alexander Bau
+maintainer:          Alexander Bau
+copyright:           2017 Alexander Bau
 category:            Web
 build-type:          Simple
 extra-source-files:  README.md
@@ -36,7 +36,7 @@ library
                      , transformers
   default-language:    Haskell2010
 
-executable hannah-exe
+executable hannah
   hs-source-dirs:      app
   main-is:             Main.hs
   other-modules:       ParseOption
@@ -48,15 +48,6 @@ executable hannah-exe
                      , filepath
   default-language:    Haskell2010
 
-test-suite hannah-test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Spec.hs
-  build-depends:       base
-                     , hannah
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  default-language:    Haskell2010
-
 source-repository head
   type:     git
-  location: https://github.com/githubuser/hannah
+  location: https://github.com/abau/hannah
