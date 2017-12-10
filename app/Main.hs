@@ -10,6 +10,7 @@ import           System.Directory (listDirectory, doesDirectoryExist)
 import           System.FilePath ((</>), takeBaseName)
 
 import AST (Specification (Specification), Specifications)
+import JavaScript (writeJavaScript)
 import Paths_hannah (getDataDir)
 import ParseSpec (parseSpecFile)
 import ParseOption
@@ -30,6 +31,10 @@ main = do
     OptionModify inFile outFile -> trySpecificationsOnFile specs inFile False False >>= \case
       Nothing -> putStrLn ("Could not parse '" ++ inFile ++ "'") >> exitFailure
       Just v  -> writeFile specs outFile $ Just v
+
+    OptionJavaScript -> do
+      html <- getDataDir >>= \d -> return (d </> "hannah-js.html")
+      writeJavaScript specs html
 
 parseSpecifications :: FilePath -> IO Specifications
 parseSpecifications relativeFilePath = do

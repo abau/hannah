@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Hannah-JS</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css" integrity="sha384-PsH8R72JQ3SOdhVi3uxftmaW6Vc51MKb0q5P2rRUpPvrszuE4W1povHYgTpBfshb" crossorigin="anonymous">
+  </head>
+  <body>
+    <div class="container-fluid">
+      <h1>Hannah-JS</h1>
+      <div id="toplevel" class="container">
+        <div class="row">
+          <div class="col-2">
+            <label class="btn btn-primary">
+              Select file... <input type="file" id="select-file" style="display: none;">
+            </label>
+          </div>
+          <div class="col">
+            <div class="input-group">
+              <span class="input-group-btn">
+                <button class="btn btn-primary" type="button" id="download-file-button">Download</button>
+              </span>
+              <input type="text" class="form-control" id="download-file-url" 
+               autocomplete="off" value="http://abau.org/hannah-js/files/http.pcap">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="secondlevel" class="container">
+        <p style="margin-top: 1ex;">
+          <a href="https://abau.org/hannah-js">Hannah-JS</a> is an experimental tool for parsing and dissecting files and network traces in JavaScript.
+          Parts of it are automatically generated using the <a href="https://abau.org/hannah">Hannah tool</a>.
+          In order to support more file formats and network protocols, one just need to write a specification using
+          <a href="https://abau.org/hannah#specification-language-reference">Hannah's specification language</a>.
+        </p>
+        <p>
+          Currently, Hannah-JS supports the following file formats and network protocols:
+          <!-- INSERT HANNAH SPECIFICATION NAMES HERE -->
+        </p>
+      </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.3/umd/popper.min.js" integrity="sha384-vFJXuSJphROIrBnz7yo7oB41mKfc8JzQZiCq4NCceLEaO4IHwicKwpJf9c9IpFgh" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/js/bootstrap.min.js" integrity="sha384-alpBpkh1PFOepccYVYDB4do5UnbKysX5WZXm3XxPqe5iKTfUKjNkCk9SaVuEZflJ" crossorigin="anonymous"></script>
+    <script>
+      "use strict";
+
+      $(document).ready(function()
+      {
+        $("#select-file").change (function ()
+        {
+          const element = document.getElementById ("select-file");
+          if ("files" in element && element.files.length > 0)
+          {
+            const reader = new FileReader ();
+            reader.onload = function (event)
+            {
+              parse (new DataView (event.target.result));
+            };
+            reader.readAsArrayBuffer (element.files[0]);
+          }
+          else
+          {
+            showAlert (`No files selected`);
+          }
+        });
+
+        $("#download-file-button").click (function ()
+        {
+          const element = document.getElementById ("download-file-url");
+          if ("value" in element)
+          {
+            const xhr = new XMLHttpRequest ();
+            xhr.open ("GET", element.value);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = function ()
+            {
+              if (this.status === 200)
+              {
+                parse (new DataView (xhr.response));
+              }
+              else
+              {
+                showAlert (`Could not download ${element.value}`);
+              }
+            };
+            xhr.send();
+          }
+          else
+          {
+            showAlert (`No URL entered`);
+          }
+        });
+      });
+
+      function parse (input)
+      {
+        let Format =
+        {
+          Dec: 0,
+          Hex: 1
+        };
+
+        let Type =
+        {
+          UInt8:  0,
+          UInt16: 1,
+          UInt32: 2,
+          Int8:   3,
+          Int16:  4,
+          Int32:  5
+        };
+
+        let ByteOrder =
+        {
+          BigEndian:    0,
+          LittleEndian: 1,
+          Swap:         2
+        };
+
+        let indent = 0;
+        let output = { data: undefined, children: new Array () };
+        let currentOutputNode = output;
+        let position = 0;
+        let specification;
+        let values = new Map ();
+        let byteOrder = ByteOrder.LittleEndian;
+
+        // INSERT HANNAH SPECIFICATIONS HERE
+        if (typeof output.data === "undefined" || output.children.length === 0)
+        {
+          showAlert (`Could not parse file`);
+        }
+        else
+        {
+          showOutput (output);
+        }
+        return output;
+
+        function trySpecifications (specs)
+        {
+          if (specs.length > 0)
+          {
+            const oldPosition = position;
+            const oldOutput = output;
+            const oldCurrentOutputNode = currentOutputNode;
+            try
+            {
+              specs[0] ();
+            }
+            catch (error)
+            {
+              if (typeof error === "string" && error === "")
+              {
+                specs.shift ();
+                position = oldPosition;
+                output = oldOutput;
+                currentOutputNode = oldCurrentOutputNode;
+                trySpecifications (specs);
+              }
+              else
+              {
+                throw error;
+              }
+            }
+          }
+        }
+
+        function readConstant (type, constant)
+        {
+          const value = readValueOfType (type);
+          if (value !== constant)
+          {
+            failRead ();
+          }
+        }
+
+        function readValue (name, type, format, assignment)
+        {
+          const value = readValueOfType (type);
+          printValues (name, type, format, assignment, [value]);
+          addValue (name, value);
+        }
+
+        function readValueSequence (name, type, length, format, assignment)
+        {
+          const l = readLength (length);
+          let values = new Array ();
+
+          for (let i = 0; i < l; i++)
+          {
+            const value = readValueOfType (type);
+            addValue (name, value);
+            values.push (value);
+          }
+          printValues (name, type, format, assignment, values);
+        }
+
+        function readValuePacked (assignment, type, format)
+        {
+          let ass = assignment.slice ();
+
+          function go (value)
+          {
+            if (ass.length > 0)
+            {
+              const [numBits, name] = ass.pop ();
+              const effective = value & (Math.pow (2, numBits) - 1);
+              
+              go (value >>> numBits);
+              printValues (name, requiredType (numBits), format, undefined, [effective]);
+              addValue (name, effective);
+            }
+          }
+          go (readValueOfType (type));
+        }
+
+        function readEnum (enum_, name, type, format, assignment)
+        {
+          const value = readValueOfType (type);
+          if (enum_.includes (value) == false)
+          {
+            failRead ();
+          }
+          printValues (name, type, format, assignment, [value]);
+          addValue (name, value);
+        }
+
+        function readData (name, length)
+        {
+          const l = readLength (length);
+          const chunk = readChunk (l);
+
+          for (let i = 0; i < l; i++)
+          {
+            addValue (name, chunk[i]);
+          }
+          printHexBlock (name, chunk);
+        }
+
+        function readAscii (name, length)
+        {
+          const l = readLength (length);
+          const chunk = readChunk (l);
+
+          for (let i = 0; i < l; i++)
+          {
+            if (chunk[i] > 127)
+            {
+              failRead ();
+            }
+            addValue (name, chunk[i]);
+          }
+          printAsciiBlock (name, chunk);
+        }
+
+        function readSequence (name, length, sequence)
+        {
+          const l = typeof length !== "undefined" ? readLength (length) : undefined;
+
+          let i = 0;
+          function valid ()
+          {
+            if (typeof l === "undefined")
+            {
+              return isEOF () === false;
+            }
+            else
+            {
+              return i < l;
+            }
+          }
+
+          while (valid ())
+          {
+            inNewBlock (name, () => sequence ());
+            i++;
+          }
+        }
+
+        function readIf (condition, ifTrue, ifFalse)
+        {
+          if (condition > 0)
+          {
+            ifTrue ();
+          }
+          else
+          {
+            ifFalse ();
+          }
+        }
+
+        function readByteOrder (bo)
+        {
+          if (bo === ByteOrder.Swap)
+          {
+            byteOrder = byteOrder === ByteOrder.LittleEndian ? ByteOrder.BigEndian 
+                                                             : ByteOrder.LittleEndian;
+          }
+          else
+          {
+            byteOrder = bo;
+          }
+        }
+
+        function readLet (name, value)
+        {
+          addValue (name, value);
+        }
+
+        function readChunk (length)
+        {
+          let chunk = new Array ();
+          for (let i = 0; i < length; i++)
+          {
+            chunk.push (readValueOfType (Type.UInt8));
+          }
+          return chunk;
+        }
+
+        function readValueOfType (type)
+        {
+          const bytes = numBytes (type);
+
+          if (input.byteLength - position < bytes)
+          {
+            failRead ();
+          }
+
+          let value;
+          switch (type)
+          {
+            case Type.UInt8: 
+              value = input.getUint8 (position);
+              break;
+            case Type.UInt16: 
+              value = input.getUint16 (position, byteOrder === ByteOrder.LittleEndian);
+              break;
+            case Type.UInt32: 
+              value = input.getUint32 (position, byteOrder === ByteOrder.LittleEndian);
+              break;
+            case Type.Int8: 
+              value = input.getInt8 (position);
+              break;
+            case Type.Int16: 
+              value = input.getInt16 (position, byteOrder === ByteOrder.LittleEndian);
+              break;
+            case Type.Int32: 
+              value = input.getInt32 (position, byteOrder === ByteOrder.LittleEndian);
+              break;
+            default:
+              failSpec (`unknown type "${type}"`);
+              break;
+          }
+          position += bytes;
+          return value;
+        }
+
+        function readLength (length)
+        {
+          const l = Math.floor (Number (length));
+
+          if (isNaN (l))
+          {
+            return getValueFromEnv (length);
+          }
+          else
+          {
+            return l;
+          }
+        }
+
+        function getValueFromEnv (name)
+        {
+          if (values.has (name))
+          {
+            return values.get (name);
+          }
+          else
+          {
+            failSpec (`name "${name}" not found`);
+          }
+        }
+
+        function addValue (name, value)
+        {
+          values.set (name, value);
+        }
+
+        function printValues (name, type, format, assignment, values)
+        {
+          const formattedValues = new Array (values.length);
+
+          for (let i = 0; i < values.length; i++)
+          {
+            formattedValues.push (formatValue (values[i], type, format, assignment));
+          }
+          appendOutput (name, formattedValues.join (" "));
+        }
+
+        function printHexBlock (name, values)
+        {
+          function formatAscii (v)
+          {
+            return (v >= 32 && v <= 126) ? String.fromCharCode (v) : ".";
+          }
+
+          const formatted = new Array ()
+
+          for (let i = 0; i < values.length; i+=16)
+          {
+            formatted.push (`<div class="row">`);
+
+            formatted.push (`<div class="col-sm">`);
+            for (let j = i; j < Math.min (values.length, i+8); j++)
+            {
+              const v = ("00" + values[j].toString (16)).substr (-2);
+              formatted.push (`${v} `);
+            }
+            formatted.push (`&ensp;&ensp;`);
+            for (let j = i+8; j < Math.min (values.length, i+16); j++)
+            {
+              const v = ("00" + values[j].toString (16)).substr (-2);
+              formatted.push (`${v} `);
+            }
+            formatted.push (`</div><div class="col-sm">`);
+
+            for (let j = i; j < Math.min (values.length, i+8); j++)
+            {
+              formatted.push (formatAscii (values[j]));
+            }
+            formatted.push (`&ensp;&ensp;`);
+            for (let j = i+8; j < Math.min (values.length, i+16); j++)
+            {
+              formatted.push (formatAscii (values[j]));
+            }
+            formatted.push (`</div></div>`);
+          }
+          appendOutput (name, formatted.join (""));
+        }
+
+        function printAsciiBlock (name, values)
+        {
+          function formatAscii (v)
+          {
+            if (v == 10)
+            {
+              return "<br>";
+            }
+            else
+            {
+              return (v >= 32 && v <= 126) ? String.fromCharCode (v) : " ";
+            }
+          }
+
+          const formatted = new Array ()
+
+          for (let i = 0; i < values.length; i++)
+          {
+            formatted.push (formatAscii (values[i]));
+          }
+          appendOutput (name, formatted.join (""));
+        }
+
+        function formatValue (value, type, format, assignment)
+        {
+          if (typeof assignment !== "undefined")
+          {
+            for (let i = 0; i < assignment.length; i++)
+            {
+              if (assignment[i][0] == value)
+              {
+                return assignment[i][1];
+              }
+            }
+          }
+
+          switch (format)
+          {
+            case Format.Hex:
+              const n = 2 * numBytes (type);
+              return "0x" + ("0".repeat (n) + value.toString (16)).substr (-n);
+
+            case Format.Dec:
+              return value.toString (10);
+          }
+        }
+
+        function numBytes (type)
+        {
+          switch (type)
+          {
+            case Type.UInt8:  return 1;
+            case Type.UInt16: return 2;
+            case Type.UInt32: return 4;
+            case Type.Int8:   return 1;
+            case Type.Int16:  return 2;
+            case Type.Int32:  return 4;
+            default:
+              failSpec (`Unknown type "${type}"`);
+          }
+        }
+
+        function requiredType (numBits)
+        {
+          if (numBits <= 8)
+          {
+            return Type.UInt8;
+          }
+          else if (numBits <= 16)
+          {
+            return Type.UInt16;
+          }
+          if (numBits <= 32)
+          {
+            return Type.UInt32;
+          }
+          failSpec (`requiredType undefined on ${numBits}`);
+        }
+
+        function inNewBlock (name, f)
+        {
+          const oldOutputNode = currentOutputNode;
+          currentOutputNode.children.push ({ data: name, children: new Array () });
+          currentOutputNode = currentOutputNode.children [currentOutputNode.children.length - 1];
+          const result = f ();
+          currentOutputNode = oldOutputNode;
+          return result;
+        }
+
+        function appendOutput (name, value)
+        {
+          currentOutputNode.children.push ({ data: [name, value], children: new Array () });
+        }
+
+        function isEOF ()
+        {
+          return position == input.byteLength;
+        }
+
+        function failRead ()
+        {
+          throw "";
+        }
+
+        function failSpec (message)
+        {
+          throw `Invalid specification ${specification}: ${message}`;
+        }
+      }
+
+      function showOutput (node)
+      {
+        let nodeIdCounter = 0;
+        function go (node)
+        {
+          let dom = [];
+          const nodeId = "node" + nodeIdCounter;
+          nodeIdCounter++;
+
+          if (node.children.length === 0)
+          {
+            dom.push (`<div class="row small">`);
+            dom.push (`<div class="col-sm-3 font-weight-bold">${node.data[0]}</div>`);
+            dom.push (`<div class="col-sm" style="font-family:monospace;">${node.data[1]}</div>`);
+            dom.push (`</div>`);
+          }
+          else
+          {
+            dom.push (`<div class="row small">`);
+            dom.push (`<div class="col-sm-3">`);
+            dom.push (`<a class="btn btn-primary btn-sm" data-toggle="collapse" 
+                          href="#${nodeId}" aria-expanded="true" aria-controls="${nodeId}"> 
+                         ${node.data}
+                       </a>`);
+            dom.push (`</div>`);
+            dom.push (`<div class="col-sm"></div>`);
+            dom.push (`</div>`);
+
+            dom.push (`<div id="${nodeId}" class="container collapse show">`);
+            for (let i = 0; i < node.children.length; i++)
+            {
+              dom.push (go (node.children[i]));
+            }
+            dom.push (`</div>`);
+          }
+          return dom.join ("");
+        }
+        $("#secondlevel").empty ();
+        $(go (node)).appendTo ("#secondlevel");
+      }
+
+      function showAlert (message)
+      {
+        $("#toplevel").prepend (`<div class="alert alert-danger" role="alert">
+                                   ${message}
+                                   <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                     <span aria-hidden="true">&times;</span>
+                                   </button>
+                                 </div>`);
+      }
+    </script>
+  </body>
+</html>
