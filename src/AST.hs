@@ -26,7 +26,7 @@ data ExpectValue = EVSingle   BS.ByteString Type Format (Maybe Assignment)
                  | EVSequence BS.ByteString Type Length Format (Maybe Assignment)
                  | EVPacked   Assignment Type Format
 
-data Expression = ExprConstant Int
+data Expression = ExprConstant Value
                 | ExprVariable BS.ByteString
                 | ExprUnary UnaryOp Expression
                 | ExprBinary BinaryOp Expression Expression
