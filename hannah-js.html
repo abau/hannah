@@ -443,13 +443,13 @@
             for (let j = i; j < Math.min (values.length, i+8); j++)
             {
               const v = ("00" + values[j].toString (16)).substr (-2);
-              formatted.push (`${v} `);
+              formatted.push (`${v}&nbsp;`);
             }
-            formatted.push (`&ensp;&ensp;`);
+            formatted.push (`&nbsp;&nbsp;`);
             for (let j = i+8; j < Math.min (values.length, i+16); j++)
             {
               const v = ("00" + values[j].toString (16)).substr (-2);
-              formatted.push (`${v} `);
+              formatted.push (`${v}&nbsp;`);
             }
             formatted.push (`</div><div class="col-sm">`);
 
@@ -457,7 +457,7 @@
             {
               formatted.push (formatAscii (values[j]));
             }
-            formatted.push (`&ensp;&ensp;`);
+            formatted.push (`&nbsp;&nbsp;`);
             for (let j = i+8; j < Math.min (values.length, i+16); j++)
             {
               formatted.push (formatAscii (values[j]));
@@ -621,14 +621,14 @@
           if (node.children.length === 0)
           {
             dom.push (`<div class="row small">`);
-            dom.push (`<div class="col-sm-3 font-weight-bold">${node.data[0]}</div>`);
+            dom.push (`<div class="col-sm-2 font-weight-bold">${node.data[0]}</div>`);
             dom.push (`<div class="col-sm" style="font-family:monospace;">${node.data[1]}</div>`);
             dom.push (`</div>`);
           }
           else
           {
             dom.push (`<div class="row small">`);
-            dom.push (`<div class="col-sm-3">`);
+            dom.push (`<div class="col-sm-2">`);
             dom.push (`<a class="btn btn-primary btn-sm" data-toggle="collapse" 
                           href="#${nodeId}" aria-expanded="true" aria-controls="${nodeId}"> 
                          ${node.data}
