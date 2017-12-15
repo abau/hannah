@@ -4,10 +4,8 @@ expect-enum "magic" uint32 hex
   , 0xd4c3b2a1  # different byte order - microsecond resolution
   , 0x4d3cb2a1  # different byte order - nanosecond resolution
   ];
-if ("magic" == 0xd4c3b2a1 || "magic" == 0x4d3cb2a1)
-{
-  byte-order-swap;
-}
+byte-order-system ("magic" == 0xa1b2c3d4 || "magic" == 0xa1b23d4d);
+
 expect-value "major-version" uint16;
 expect-value "minor-version" uint16;
 expect-value "this-timezone" uint32;
@@ -19,6 +17,8 @@ expect-value "data-link-type" uint32
   , 101 -> "Raw IP"
   ];
 sequence "packet" {
+  byte-order-system ("magic" == 0xa1b2c3d4 || "magic" == 0xa1b23d4d);
+
   expect-value "timestamp-seconds" uint32;
   expect-value "timestamp-microseconds" uint32;
   expect-value "captured-size" uint32;
@@ -28,10 +28,10 @@ sequence "packet" {
 
   if ("data-link-type" == 1)
   {
-    try ["pcap/ethernet"];
+    try ["pcap/ethernet", "pcap/data"];
   }
   else
   {
-    expect-data "data" of-length "captured-size";
+    try ["pcap/data"];
   }
 }

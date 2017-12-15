@@ -187,12 +187,16 @@ readIf condition true mFalse = do
 
 readByteOrder :: ByteOrder -> Read ()
 readByteOrder = \case
-  ByteOrderBigEndian    -> mapEnv $ \env -> env { byteOrder = E.BigEndian }
-  ByteOrderLittleEndian -> mapEnv $ \env -> env { byteOrder = E.LittleEndian }
-  ByteOrderSwap         -> mapEnv $ \env -> 
-                             case byteOrder env of
-                               E.BigEndian    -> env { byteOrder = E.LittleEndian }
-                               E.LittleEndian -> env { byteOrder = E.BigEndian }
+  ByteOrderBigEndian    -> set E.BigEndian
+  ByteOrderLittleEndian -> set E.LittleEndian
+  ByteOrderSystem c     -> do
+    value <- readExpression c
+    if value > 0 then set E.getSystemEndianness
+                 else case E.getSystemEndianness of
+                   E.BigEndian    -> set E.LittleEndian
+                   E.LittleEndian -> set E.BigEndian
+  where
+    set e = mapEnv $ \env -> env { byteOrder = e }
 
 readLet :: BS.ByteString -> Expression -> Read ()
 readLet name expr = do

@@ -127,13 +127,16 @@ if_ = do
 
 byteOrder :: Parser Statement
 byteOrder = do
-  byteorder <- swap <|> little <|> big
+  byteorder <- little <|> big <|> swap
   semicolon
   return $ StmtByteOrder byteorder
   where
-    swap   = reserved "byte-order-swap"          >> return ByteOrderSwap
     little = reserved "byte-order-little-endian" >> return ByteOrderLittleEndian
     big    = reserved "byte-order-big-endian"    >> return ByteOrderBigEndian
+    swap   = do
+      reserved "byte-order-system"
+      condition <- parens expression
+      return $ ByteOrderSystem condition
 
 let_ :: Parser Statement
 let_ = do
@@ -190,7 +193,7 @@ language = emptyDef {
   , P.opLetter = P.opLetter haskellStyle
   , P.reservedNames = [ "expect-value", "expect-const", "expect-enum", "expect-data", "expect-ascii"
                       , "sequence", "of-length", "if", "else", "let", "try"
-                      , "byte-order-swap", "byte-order-little-endian", "byte-order-big-endian"
+                      , "byte-order-system", "byte-order-little-endian", "byte-order-big-endian"
                       , "uint8", "uint16", "uint32", "int8", "int16", "int32"
                       , "hex"
                       ]

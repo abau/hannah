@@ -66,8 +66,12 @@ writeStatement = \case
   StmtIf c t f ->
     writeCall "readIf" [ writeExpression c, writeStatements t
                        , writeStatements $ Maybe.fromMaybe [] f ]
-  StmtByteOrder b ->
-    writeCall "readByteOrder" [writeByteOrder b]
+  StmtByteOrder ByteOrderBigEndian ->
+    writeCall "readByteOrder" [print "ByteOrder.BigEndian"]
+  StmtByteOrder ByteOrderLittleEndian ->
+    writeCall "readByteOrder" [print "ByteOrder.LittleEndian"]
+  StmtByteOrder (ByteOrderSystem c) ->
+    writeCall "readByteOrderSystem" [writeExpression c]
   StmtLet n e ->
     writeCall "readLet" [writeName n, writeExpression e]
   StmtTry s ->
@@ -154,12 +158,6 @@ writeLength = \case
 
 writeEnum :: [Int] -> WriteJS ()
 writeEnum = print . show
-
-writeByteOrder :: ByteOrder -> WriteJS ()
-writeByteOrder = \case
-  ByteOrderBigEndian    -> print "ByteOrder.BigEndian"
-  ByteOrderLittleEndian -> print "ByteOrder.LittleEndian"
-  ByteOrderSwap         -> print "ByteOrder.Swap"
 
 writeCall :: String -> [WriteJS ()] -> WriteJS ()
 writeCall name args = do

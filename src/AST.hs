@@ -26,6 +26,10 @@ data ExpectValue = EVSingle   BS.ByteString Type Format (Maybe Assignment)
                  | EVSequence BS.ByteString Type Length Format (Maybe Assignment)
                  | EVPacked   Assignment Type Format
 
+data ByteOrder = ByteOrderBigEndian
+               | ByteOrderLittleEndian
+               | ByteOrderSystem Expression
+
 data Expression = ExprConstant Value
                 | ExprVariable BS.ByteString
                 | ExprUnary UnaryOp Expression
@@ -53,7 +57,3 @@ data Type = TypeUInt8
           | TypeInt8
           | TypeInt16
           | TypeInt32
-
-data ByteOrder = ByteOrderBigEndian
-               | ByteOrderLittleEndian
-               | ByteOrderSwap

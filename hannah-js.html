@@ -118,54 +118,75 @@
         {
           BigEndian:    0,
           LittleEndian: 1,
-          Swap:         2
         };
 
         let output = { data: undefined, children: new Array () };
-        let currentOutputNode = output;
+        let depth = 0;
         let position = 0;
         let specification;
         let values = new Map ();
-        let byteOrder = ByteOrder.LittleEndian;
+        let byteOrder = systemEndianness ();
 
-        // INSERT HANNAH SPECIFICATIONS HERE
-        if (typeof output.data === "undefined" || output.children.length === 0)
+        try
         {
-          showAlert (`Could not parse file`);
+          // INSERT HANNAH SPECIFICATIONS HERE
+          if (typeof output.data === "undefined")
+          {
+            failRead ();
+          }
+          else
+          {
+            showOutput (output);
+          }
         }
-        else
+        catch (error)
         {
-          showOutput (output);
+          if (isFailReadError (error))
+          {
+            showAlert (`Could not parse file`);
+          }
+          else
+          {
+            throw error;
+          }
         }
-        return output;
+        return;
 
         function trySpecifications (specs)
         {
-          if (specs.length > 0)
+          const oldPosition = position;
+          const oldOutput = JSON.parse (JSON.stringify (output));
+          const oldDepth = depth;
+
+          for (let i = 0; i < specs.length; i++)
           {
-            const oldPosition = position;
-            const oldOutput = output;
-            const oldCurrentOutputNode = currentOutputNode;
+            console.log (`trying ${i} at ${oldPosition} and ${oldDepth}`);
+            position = oldPosition;
+            output = JSON.parse (JSON.stringify (oldOutput));
+            depth = oldDepth;
+
             try
             {
-              specs[0] ();
+              specs[i] ();
+              console.log (`${i} succeeds`);
+              return;
             }
             catch (error)
             {
-              if (typeof error === "string" && error === "")
+              if (isFailReadError (error))
               {
-                specs.shift ();
-                position = oldPosition;
-                output = oldOutput;
-                currentOutputNode = oldCurrentOutputNode;
-                trySpecifications (specs);
+                console.log (`${i} fails. Trying next`);
+                continue;
               }
               else
               {
+                console.log (`${i} fails. other error`);
                 throw error;
               }
             }
           }
+          console.log (`exhausted`);
+          failRead ();
         }
 
         function readConstant (type, constant)
@@ -286,7 +307,7 @@
           {
             ifTrue ();
           }
-          else
+          else if (typeof ifFalse !== "undefined")
           {
             ifFalse ();
           }
@@ -294,14 +315,19 @@
 
         function readByteOrder (bo)
         {
-          if (bo === ByteOrder.Swap)
+          byteOrder = bo;
+        }
+
+        function readByteOrderSystem (condition)
+        {
+          if (condition > 0)
           {
-            byteOrder = byteOrder === ByteOrder.LittleEndian ? ByteOrder.BigEndian 
-                                                             : ByteOrder.LittleEndian;
+            byteOrder = systemEndianness ();
           }
           else
           {
-            byteOrder = bo;
+            byteOrder = systemEndianness === ByteOrder.LittleEndian ? ByteOrder.BigEndian 
+                                                                    : ByteOrder.LittleEndian;
           }
         }
 
@@ -520,19 +546,46 @@
           failSpec (`requiredType undefined on ${numBits}`);
         }
 
+        function systemEndianness ()
+        {
+          if ((new Uint32Array((new Uint8Array([1,2,3,4])).buffer))[0] === 0x04030201)
+          {
+            return ByteOrder.LittleEndian;
+          }
+          else
+          {
+            return ByteOrder.BigEndian;
+          }
+        }
+
         function inNewBlock (name, f)
         {
-          const oldOutputNode = currentOutputNode;
-          currentOutputNode.children.push ({ data: name, children: new Array () });
-          currentOutputNode = currentOutputNode.children [currentOutputNode.children.length - 1];
+          getCurrentOutputNode ().children.push ({ data: name, children: new Array () });
+          depth += 1;
           const result = f ();
-          currentOutputNode = oldOutputNode;
+          depth -= 1;
           return result;
         }
 
         function appendOutput (name, value)
         {
-          currentOutputNode.children.push ({ data: [name, value], children: new Array () });
+          getCurrentOutputNode ().children.push ({ data: [name, value], children: new Array () });
+        }
+
+        function getCurrentOutputNode ()
+        {
+          function go (output, d)
+          {
+            if (d === 0)
+            {
+              return output;
+            }
+            else
+            {
+              return go (output.children[output.children.length - 1], d - 1);
+            }
+          }
+          return go (output, depth);
         }
 
         function isEOF ()
@@ -540,9 +593,14 @@
           return position == input.byteLength;
         }
 
+        function isFailReadError (error)
+        {
+          return typeof error === "string" && error === "failRead";
+        }
+
         function failRead ()
         {
-          throw "";
+          throw "failRead";
         }
 
         function failSpec (message)
