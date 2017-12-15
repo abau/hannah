@@ -62,13 +62,14 @@ bounds = \case
   Right TypeInt16  -> (fromIntegral (minBound :: Int16),  fromIntegral (maxBound :: Int16))
   Right TypeInt32  -> (fromIntegral (minBound :: Int32),  fromIntegral (maxBound :: Int32))
 
-evaluate :: Expression -> Prefix -> Values -> Maybe Value
-evaluate expression prefix env = case expression of
+evaluate :: Expression -> Prefix -> Value -> Values -> Maybe Value
+evaluate expression prefix filePos env = case expression of
   ExprConstant i      -> return i
   ExprVariable v      -> getValue v prefix env
-  ExprUnary op e1     -> return (unary  op) `ap` (evaluate e1 prefix env)
-  ExprBinary op e1 e2 -> return (binary op) `ap` (evaluate e1 prefix env)
-                                            `ap` (evaluate e2 prefix env)
+  ExprUnary op e1     -> return (unary  op) `ap` (evaluate e1 prefix filePos env)
+  ExprBinary op e1 e2 -> return (binary op) `ap` (evaluate e1 prefix filePos env)
+                                            `ap` (evaluate e2 prefix filePos env)
+  ExprFilePosition    -> return filePos
   where
     unary UnaryPlus  v = v
     unary UnaryMinus v = -v

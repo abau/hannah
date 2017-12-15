@@ -98,6 +98,7 @@ writeExpression = \case
                                    >> writeBinary op
                                    >> writeExpression e2
                                    >> print ")"
+  ExprFilePosition    -> print "position"
   where
     writeUnary  UnaryPlus       = print "+"
     writeUnary  UnaryMinus      = print "-"

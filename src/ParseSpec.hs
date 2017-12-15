@@ -162,9 +162,10 @@ length = do
 expression :: Parser Expression
 expression = buildExpressionParser exprTable term <?> "expression"
   where
-    term     = parens expression <|> variable <|> constant <?> "simple expression"
+    term     = parens expression <|> variable <|> constant <|> filePos <?> "simple expression"
     variable = byteStringLiteral >>= return . ExprVariable
     constant = integer >>= return . ExprConstant
+    filePos  = reserved "file-position" >> return ExprFilePosition
 
 format :: Parser Format
 format = (reserved "hex"  >> return FormatHex)
@@ -195,7 +196,7 @@ language = emptyDef {
                       , "sequence", "of-length", "if", "else", "let", "try"
                       , "byte-order-system", "byte-order-little-endian", "byte-order-big-endian"
                       , "uint8", "uint16", "uint32", "int8", "int16", "int32"
-                      , "hex"
+                      , "hex", "file-position"
                       ]
   , P.reservedOpNames = [ "->", "&&", "||", "==", "!=", "+", "-", "*", "/", "="
                         , ">", ">=", "<", "<="

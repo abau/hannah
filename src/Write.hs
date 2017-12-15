@@ -188,7 +188,8 @@ writeLength = \case
 writeExpression :: Expression -> Write Int
 writeExpression e = do
   prefix <- fromEnv prefix
-  value  <- fromEnv values >>= return . evaluate e prefix
+  filePos <- fromEnv handle >>= runIO . IO.hTell >>= return . fromIntegral
+  value  <- fromEnv values >>= return . evaluate e prefix filePos
   case value of
     Nothing -> failSpec "Could not evaluate expression"
     Just v  -> return v

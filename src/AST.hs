@@ -34,6 +34,7 @@ data Expression = ExprConstant Value
                 | ExprVariable BS.ByteString
                 | ExprUnary UnaryOp Expression
                 | ExprBinary BinaryOp Expression Expression
+                | ExprFilePosition
 
 data BinaryOp = BinAnd  | BinOr        | BinEqual   | BinNotEqual 
               | BinPlus | BinMinus     | BinTimes   | BinDiv
