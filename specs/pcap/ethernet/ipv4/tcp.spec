@@ -1,5 +1,5 @@
-expect-value "port-destination" uint16;
 expect-value "port-source" uint16;
+expect-value "port-destination" uint16;
 expect-value "sequence-number" uint32;
 expect-value "acknowledgement-number" uint32;
 expect-value [ 4 -> "data-offset"
@@ -15,7 +15,7 @@ expect-value [ 4 -> "data-offset"
              , 1 -> "fin"
              ] uint16;
 expect-value "window-size" uint16;
-expect-value "checksum" uint16;
+expect-value "checksum" uint16 hex;
 expect-value "urgent-pointer" uint16;
 
 if ("data-offset" > 5)
