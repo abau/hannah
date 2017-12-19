@@ -20,6 +20,8 @@ data-files:          specs/pcap.spec
                    , specs/pcap/ethernet/ipv4.spec
                    , specs/pcap/ethernet/ipv4/tcp.spec
                    , specs/pcap/ethernet/ipv4/tcp/ascii.spec
+                   , specs/pcap/ethernet/ipv4/udp.spec
+                   , specs/pcap/ethernet/ipv4/udp/dns.spec
                    , specs/bmp.spec
                    , hannah-js.html
 

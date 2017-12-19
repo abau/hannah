@@ -8,7 +8,8 @@ expect-value [ 1  -> "reserved"
              , 13 -> "fragment-offset"
              ] uint16 hex;
 expect-value "time-to-live" uint8;
-expect-enum "protocol" uint8 [ 0x06 -> "TCP" ];
+expect-enum "protocol" uint8 [ 0x06 -> "TCP"
+                             , 0x11 -> "UDP" ];
 expect-value "header-checksum" uint16 hex;
 expect-value "ip-source" uint8 of-length 4;
 expect-value "ip-destination" uint8 of-length 4;
@@ -22,4 +23,8 @@ if ("internet-header-length" > 5)
 if ("protocol" == 0x06)
 {
   try ["pcap/ethernet/ipv4/tcp"];
+}
+else if ("protocol" == 0x11)
+{
+  try ["pcap/ethernet/ipv4/udp"];
 }
