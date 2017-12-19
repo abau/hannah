@@ -161,7 +161,6 @@
 
           for (let i = 0; i < specs.length; i++)
           {
-            console.log (`trying ${i} at ${oldPosition} and ${oldDepth}`);
             position = oldPosition;
             output = JSON.parse (JSON.stringify (oldOutput));
             depth = oldDepth;
@@ -169,24 +168,20 @@
             try
             {
               specs[i] ();
-              console.log (`${i} succeeds`);
               return;
             }
             catch (error)
             {
               if (isFailReadError (error))
               {
-                console.log (`${i} fails. Trying next`);
                 continue;
               }
               else
               {
-                console.log (`${i} fails. other error`);
                 throw error;
               }
             }
           }
-          console.log (`exhausted`);
           failRead ();
         }
 
