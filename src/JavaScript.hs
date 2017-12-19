@@ -6,6 +6,7 @@ import qualified Data.ByteString as BS
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
+import           Data.String (fromString)
 import           Prelude hiding (print)
 import qualified System.IO as IO
 
@@ -22,7 +23,14 @@ writeJavaScript specs filePath = IO.withFile filePath IO.ReadMode go
         putStrLn line
         when ("INSERT HANNAH SPECIFICATION NAMES HERE" `List.isInfixOf` line) $ do
           print "<ul style=\"font-family:monospace;\">"
-          forM_ leafSpecNames $ \name -> print "<li>" >> BS.putStr name >> print "</li>"
+          forM_ leafSpecNames $ \name -> do
+            print "<li><a href=\""
+            BS.putStr $ BS.concat [ fromString "https://github.com/abau/hannah/blob/master/specs/"
+                                  , name
+                                  , fromString ".spec" ]
+            print "\">"
+            BS.putStr name
+            print "</a></li>"
           print "</ul>"
 
         when ("INSERT HANNAH SPECIFICATIONS HERE" `List.isInfixOf` line) $ do
