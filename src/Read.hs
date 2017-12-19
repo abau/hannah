@@ -159,23 +159,32 @@ readAscii name length = do
     isNewline   = (==) '\n' . w2c
     isPrintable = Char.isPrint . w2c
 
-readSequence :: BS.ByteString -> Maybe Length -> [Statement] -> Read ()
-readSequence name length statements = mapM readLength length >>= go 0
+readSequence :: BS.ByteString -> SequenceLength -> [Statement] -> Read ()
+readSequence name length statements = case length of
+  SeqLengthEOF             -> goEOF 0
+  SeqLengthFixed l         -> readLength l >>= goFixed 0
+  SeqLengthPostCondition c -> goPostCondition 0 c
   where
-    go i = \case
-      Nothing -> do
-        isEOF <- fromEnv handle >>= runIO . IO.hIsEOF
-        unless isEOF $ do
-          printBlock name []
-          withPrefix i $ withIncreasedIndent $ readStatements statements
-          go (i + 1) Nothing
-    
-      Just length | i < length -> do
+    goEOF i = do
+      isEOF <- fromEnv handle >>= runIO . IO.hIsEOF
+      unless isEOF $ do
         printBlock name []
         withPrefix i $ withIncreasedIndent $ readStatements statements
-        go (i + 1) $ Just length
+        goEOF $ i + 1
 
-      Just _ -> return ()
+    goFixed i length = 
+      if i < length
+      then do printBlock name []
+              withPrefix i $ withIncreasedIndent $ readStatements statements
+              goFixed (i + 1) length
+      else return ()
+
+    goPostCondition i condition = do
+      printBlock name []
+      withPrefix i $ withIncreasedIndent $ readStatements statements
+      c <- withPrefix i $ readExpression condition
+      if c > 0 then goPostCondition (i + 1) condition
+               else return ()
 
 readIf :: Expression -> [Statement] -> Maybe [Statement] -> Read ()
 readIf condition true mFalse = do

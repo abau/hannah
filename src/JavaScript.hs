@@ -51,18 +51,18 @@ writeStatement = \case
   StmtExpectValue (EVSingle n t f a) ->
     writeCall "readValue" [writeName n, writeType t, writeFormat f, writeAssignment a]
   StmtExpectValue (EVSequence n t l f a) ->
-    writeCall "readValueSequence" [ writeName n, writeType t, writeLength $ Just l
+    writeCall "readValueSequence" [ writeName n, writeType t, writeLength l
                                   , writeFormat f, writeAssignment a ]
   StmtExpectValue (EVPacked a t f) ->
     writeCall "readValuePacked" [writeAssignment $ Just a, writeType t, writeFormat f]
   StmtExpectEnum e n t f a ->
     writeCall "readEnum" [writeEnum e, writeName n, writeType t, writeFormat f, writeAssignment a]
   StmtExpectData n l ->
-    writeCall "readData" [writeName n, writeLength $ Just l]
+    writeCall "readData" [writeName n, writeLength l]
   StmtExpectAscii n l ->
-    writeCall "readAscii" [writeName n, writeLength $ Just l]
+    writeCall "readAscii" [writeName n, writeLength l]
   StmtSequence n l s ->
-    writeCall "readSequence" [writeName n, writeLength l, writeStatements s]
+    writeCall "readSequence" [writeName n, writeSequenceLength l, writeStatements s]
   StmtIf c t f ->
     writeCall "readIf" [ writeExpression c, writeStatements t
                        , writeStatements $ Maybe.fromMaybe [] f ]
@@ -85,6 +85,15 @@ writeSpecifications specs = do
     writeCall ("read_" ++ fromSpecificationName s) []
     print "}"
   print "]"
+
+writeSequenceLength :: SequenceLength -> WriteJS ()
+writeSequenceLength = \case
+  SeqLengthEOF             -> print "undefined"
+  SeqLengthFixed l         -> writeLength l
+  SeqLengthPostCondition c -> do
+    print "function (){return "
+    writeExpression c
+    print ";}"
 
 writeExpression :: Expression -> WriteJS ()
 writeExpression = \case
@@ -151,11 +160,10 @@ writeFormat = \case
   FormatDec -> print "Format.Dec"
   FormatHex -> print "Format.Hex"
 
-writeLength :: Maybe Length -> WriteJS ()
+writeLength :: Length -> WriteJS ()
 writeLength = \case
-  Nothing -> print "undefined"
-  Just (LengthConstant c) -> print $ show $ show c
-  Just (LengthVariable v) -> print $ show v
+  LengthConstant c -> print $ show $ show c
+  LengthVariable v -> print $ show v
 
 writeEnum :: [Int] -> WriteJS ()
 writeEnum = print . show

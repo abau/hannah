@@ -110,10 +110,21 @@ expectAscii = do
 sequence :: Parser Statement
 sequence = do
   reserved "sequence"
-  name       <- byteStringLiteral
-  length     <- optionMaybe length
-  statements <- braces $ many1 statement
-  return $ StmtSequence name length statements
+  name        <- byteStringLiteral
+  fixedLength <- optionMaybe length
+  statements  <- braces $ many1 statement
+  seqLength   <- case fixedLength of
+    Just l  -> return $ SeqLengthFixed l
+    Nothing -> optionMaybe postcondition >>= \case
+      Just c  -> return $ SeqLengthPostCondition c
+      Nothing -> return SeqLengthEOF
+  return $ StmtSequence name seqLength statements
+  where
+    postcondition = do
+      reserved "while"
+      condition <- parens expression
+      semicolon
+      return condition
 
 if_ :: Parser Statement
 if_ = do
@@ -193,7 +204,7 @@ language = emptyDef {
   , P.opStart = P.opStart haskellStyle
   , P.opLetter = P.opLetter haskellStyle
   , P.reservedNames = [ "expect-value", "expect-const", "expect-enum", "expect-data", "expect-ascii"
-                      , "sequence", "of-length", "if", "else", "let", "try"
+                      , "sequence", "of-length", "while", "if", "else", "let", "try"
                       , "byte-order-system", "byte-order-little-endian", "byte-order-big-endian"
                       , "uint8", "uint16", "uint32", "int8", "int16", "int32"
                       , "hex", "file-position"

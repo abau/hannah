@@ -127,24 +127,32 @@ writeAscii name length = do
       values <- forM [0..length - 1] $ \i -> withPrefix i $ optionalValueFromEnv name
       return $ fmap BS.pack $ sequence $ map (fmap fromIntegral) values
 
-writeSequence :: BS.ByteString -> Maybe Length -> [Statement] -> Write ()
-writeSequence name length statements = mapM writeLength length >>= go 0 
+writeSequence :: BS.ByteString -> SequenceLength -> [Statement] -> Write ()
+writeSequence name length statements = case length of
+  SeqLengthEOF             -> goEOF 0
+  SeqLengthFixed l         -> writeLength l >>= goFixed 0
+  SeqLengthPostCondition c -> goPostCondition 0 c
   where
-    go i = \case
-      Nothing -> do
-        oneMore <- withPrefix i $ choose label True [0,1] Nothing TypeUInt8 FormatDec assignment
-        when (oneMore == 1) $ do
-          withPrefix i $ writeStatements statements
-          go (i + 1) Nothing
-
-      Just length | i < length -> do
+    goEOF i = do
+      oneMore <- withPrefix i $ choose label True [0,1] Nothing TypeUInt8 FormatDec assignment
+      when (oneMore == 1) $ do
         withPrefix i $ writeStatements statements
-        go (i + 1) $ Just length
+        goEOF (i + 1)
+      where
+        label      = BS.append (fromString "New ") name
+        assignment = Just [ (0, fromString "No"), (1, fromString "Yes") ]
 
-      Just _ -> return ()
+    goFixed i length =
+      if i < length
+      then do withPrefix i $ writeStatements statements
+              goFixed (i + 1) length
+      else return ()
 
-    label      = BS.append (fromString "New ") name
-    assignment = Just [ (0, fromString "No"), (1, fromString "Yes") ]
+    goPostCondition i condition = do
+      withPrefix i $ writeStatements statements
+      c <- withPrefix i $ writeExpression condition
+      if c > 0 then goPostCondition (i + 1) condition
+               else return ()
 
 writeIf :: Expression -> [Statement] -> Maybe [Statement] -> Write ()
 writeIf condition true mFalse = do

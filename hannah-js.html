@@ -275,25 +275,30 @@
 
         function readSequence (name, length, sequence)
         {
-          const l = typeof length !== "undefined" ? readLength (length) : undefined;
-
-          let i = 0;
-          function valid ()
+          switch (typeof length)
           {
-            if (typeof l === "undefined")
-            {
-              return isEOF () === false;
-            }
-            else
-            {
-              return i < l;
-            }
-          }
+            case "undefined":
+              while (isEOF () === false)
+              {
+                inNewBlock (name, () => sequence ());
+              }
+              break;
 
-          while (valid ())
-          {
-            inNewBlock (name, () => sequence ());
-            i++;
+            case "function":
+              do
+              {
+                inNewBlock (name, () => sequence ());
+              }
+              while (length ());
+              break;
+
+            default:
+              const l = readLength (length);
+              for (let i = 0; i < l; i++)
+              {
+                inNewBlock (name, () => sequence ());
+              }
+              break;
           }
         }
 
