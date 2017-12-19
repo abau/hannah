@@ -6,5 +6,7 @@ expect-value "checksum" uint16 hex;
 let "payload-length" = "length" - 8;
 if ("payload-length" > 0)
 {
-  try ["pcap/ethernet/ipv4/udp/dns"];
+  try [ "pcap/ethernet/ipv4/udp/dns"
+      , "pcap/ethernet/ipv4/udp/dhcp"
+      ];
 }
