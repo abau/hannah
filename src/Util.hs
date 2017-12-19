@@ -26,7 +26,7 @@ getValue name prefix values = go prefix
 toPrefixName :: BS.ByteString -> [Int] -> BS.ByteString
 toPrefixName n = BS.append n . foldr append BS.empty
   where
-    append i = BS.append $ BS.concat [fromString "[", fromString $ show i, fromString "]"]
+    append i = BS.append $ BS.concat [fromString "-", fromString $ show i]
 
 formatValue :: Value -> Type -> Format -> Maybe Assignment -> BS.ByteString
 formatValue value type_ format = \case
